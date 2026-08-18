@@ -3,9 +3,9 @@ from pydantic import BaseModel
 
 class GraphNode(BaseModel):
     id: str
-    kind: str  # "entity" | "chunk"
+    kind: str
     label: str
-    type: str | None = None  # entity type (person/organization/...); None for chunk nodes
+    type: str | None = None
     source_files: list[str] = []
     page: int | None = None
     content_type: str | None = None

@@ -32,7 +32,7 @@ def test_picture_text_combines_caption_description_and_ocr():
 
     assert "Caption: Figure 1: Revenue" in text
     assert "Description: A chart of quarterly revenue" in text
-    assert "<end_of_utterance" not in text  # SmolVLM's stray stop token got stripped
+    assert "<end_of_utterance" not in text
     assert "OCR text: Q1 Q2 Q3 Q4" in text
 
 
@@ -89,7 +89,7 @@ def test_chunk_document_raises_on_zero_chunks(tmp_path, monkeypatch):
     with pytest.raises(EmptyDocumentError):
         chunker.chunk_document(_FakeDoc(), cache_path)
 
-    assert not cache_path.exists()  # never cache an empty/failed result
+    assert not cache_path.exists()
 
 
 def test_chunk_document_recovers_from_corrupted_cache(tmp_path, monkeypatch):
@@ -101,7 +101,7 @@ def test_chunk_document_recovers_from_corrupted_cache(tmp_path, monkeypatch):
 
     assert texts == ["hello world"]
     assert len(metas) == 1
-    # cache file is valid JSON now, and matches what was returned
+
     reloaded = json.loads(cache_path.read_text())
     assert reloaded["texts"] == texts
 

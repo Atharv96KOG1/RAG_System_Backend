@@ -13,10 +13,10 @@ class DocumentMetadata(BaseModel):
 class DocumentSummary(BaseModel):
     hash: str
     filename: str
-    # None while ingest_status is "pending" — parsing/chunking/embedding hasn't finished yet.
+
     metadata: DocumentMetadata | None
-    ingest_status: str  # "pending" | "ready" | "failed"
-    graph_status: str  # "pending" | "ready" | "failed" — lags ingest_status, only gates the Graph tab
+    ingest_status: str
+    graph_status: str
     error: str | None = None
 
 

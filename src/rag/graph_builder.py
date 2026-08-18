@@ -1,17 +1,3 @@
-"""Entity/relation knowledge graph built from a document's already-chunked text.
-
-Extraction runs once per *heading-section group*, not per chunk — a 100-page PDF chunks
-to a few hundred pieces but only a few dozen heading sections, and grouping is also more
-semantically correct: a relation between two entities often spans several chunks of the
-same section that per-chunk extraction would never see side by side. Every entity/relation
-pulled from a group still gets chunk-granular provenance (the group's own chunk indices),
-so downstream consumers (retrieval fusion, graph viz) never lose chunk-level attribution.
-
-The graph itself is cached to disk per document content-hash (see
-src.core.config.cache_paths_for), exactly like the parsed doc and chunk caches, so
-re-ingesting an already-seen file never re-calls the LLM.
-"""
-
 import asyncio
 import json
 import re
@@ -59,14 +45,11 @@ class ExtractedGraph(BaseModel):
 
 
 def _approx_tokens(text):
-    # Rough word-count proxy is enough for a soft grouping cap — no need for a real
-    # tokenizer here, unlike chunker.py's HybridChunker which enforces a hard model limit.
+
     return len(text.split())
 
 
 def group_chunks_by_heading(chunk_texts, chunk_metas, max_tokens=None):
-    """Contiguous runs of chunks sharing the same headings, capped at max_tokens per
-    group (a single huge section is split further rather than sent as one giant call)."""
     max_tokens = max_tokens if max_tokens is not None else settings.graph_group_max_tokens
     groups = []
     current_texts, current_indices, current_heading, current_tokens = [], [], object(), 0
@@ -74,9 +57,7 @@ def group_chunks_by_heading(chunk_texts, chunk_metas, max_tokens=None):
     for i, (text, meta) in enumerate(zip(chunk_texts, chunk_metas, strict=True)):
         heading = meta.get("headings", "")
         tokens = _approx_tokens(text)
-        starts_new_group = (
-            not current_indices or heading != current_heading or current_tokens + tokens > max_tokens
-        )
+        starts_new_group = not current_indices or heading != current_heading or current_tokens + tokens > max_tokens
         if starts_new_group and current_indices:
             groups.append({"text": "\n\n".join(current_texts), "chunk_indices": current_indices})
             current_texts, current_indices, current_tokens = [], [], 0
@@ -103,8 +84,6 @@ async def _extract_graph_for_group(group_text, llm, semaphore):
         try:
             return await chain.ainvoke({"entity_types": ", ".join(settings.graph_entity_types), "text": group_text})
         except Exception:
-            # One bad group (LLM hiccup, malformed structured output) shouldn't take down
-            # graph-building for the whole document — it just contributes no nodes/edges.
             return ExtractedGraph()
 
 
@@ -114,9 +93,6 @@ async def _extract_all_groups(groups, llm):
 
 
 def build_document_graph(chunk_texts, chunk_metas, source_file, llm):
-    """Builds this single document's entity/relation graph. Safe to call from a sync
-    context (e.g. a FastAPI BackgroundTasks callback) — spins its own event loop via
-    asyncio.run rather than requiring an async caller."""
     graph = nx.MultiDiGraph()
 
     for i, (text, meta) in enumerate(zip(chunk_texts, chunk_metas, strict=True)):
@@ -164,7 +140,7 @@ def build_document_graph(chunk_texts, chunk_metas, source_file, llm):
             source_id = name_to_id.get(_normalize_name(relation.source))
             target_id = name_to_id.get(_normalize_name(relation.target))
             if not source_id or not target_id or source_id == target_id:
-                continue  # relation referenced an entity name this group never extracted
+                continue
             graph.add_edge(source_id, target_id, type=relation.type.strip() or "related_to", source_file=source_file)
 
     return graph
@@ -186,20 +162,12 @@ def load_cached_graph(cache_path):
 
 
 def build_combined_graph(per_doc_graphs):
-    """Unions each active document's cached graph and merges entities across documents
-    that share an exact normalized name. Restricted to named-entity-like types
-    (settings.graph_overlap_entity_types) so two unrelated docs both mentioning a generic term
-    like "revenue" don't get flagged as a false cross-document overlap. Near-duplicate
-    names (e.g. "Acme Corp" vs "Acme Corporation") are NOT merged in this pass — that
-    needs an embedding-similarity step, deferred as a v2 improvement."""
     combined = nx.MultiDiGraph()
     for graph in per_doc_graphs:
         if graph is None:
             continue
         combined = nx.compose(combined, graph)
-        # nx.compose keeps the second graph's node/edge attrs on conflict, which would
-        # silently drop the first graph's source_files/chunk_ids for any shared entity
-        # node — recompute those unions explicitly for every entity node touched.
+
         for node_id, attrs in graph.nodes(data=True):
             if attrs.get("kind") != "entity":
                 continue
@@ -211,8 +179,6 @@ def build_combined_graph(per_doc_graphs):
 
 
 def overlap_node_ids(graph):
-    """Entity nodes whose source_files span more than one document — a cross-document
-    overlap signal — restricted to named-entity-like types to keep it meaningful."""
     return [
         node_id
         for node_id, attrs in graph.nodes(data=True)

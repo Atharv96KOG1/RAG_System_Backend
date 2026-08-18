@@ -1,7 +1,3 @@
-"""Parse every PDF in data/ through the real pipeline (document_parser + chunker)
-and report which ones fail, so parsing robustness can be checked before building
-multi-doc features on top. Run: python -m src.cli.parse_audit"""
-
 import sys
 import time
 from pathlib import Path

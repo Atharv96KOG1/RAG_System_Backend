@@ -26,9 +26,6 @@ def get_graph():
                 )
             )
         elif graph.degree(node_id) > 0:
-            # Chunk nodes with zero edges mention no extracted entity — they add visual
-            # clutter without conveying anything, so they're pruned from the viz payload
-            # (they still exist in the underlying graph for retrieval-fusion purposes).
             nodes.append(
                 GraphNode(
                     id=node_id,
