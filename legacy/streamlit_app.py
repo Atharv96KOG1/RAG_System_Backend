@@ -2,7 +2,7 @@ import hashlib
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # legacy/ -> backend/, so `src.*` resolves
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import streamlit as st
 
@@ -38,7 +38,7 @@ def save_upload(uploaded_file):
 st.title("📄 Document RAG")
 
 if "docs" not in st.session_state:
-    st.session_state["docs"] = {}  # file_hash -> {"source_path", "entry"}
+    st.session_state["docs"] = {}
 
 with st.sidebar:
     st.header("Documents")
@@ -53,8 +53,6 @@ with st.sidebar:
                         entry = get_ingested(str(dest_path), file_hash)
                     st.session_state["docs"][file_hash] = {"source_path": dest_path, "entry": entry}
                 except RagError as exc:
-                    # Known, expected failure (encrypted/corrupt PDF, blank document) —
-                    # show the clear message and skip this file, don't block the others.
                     st.error(f"{uploaded_file.name}: {exc}")
                 except Exception:
                     st.error(f"{uploaded_file.name}: something went wrong while processing this document.")

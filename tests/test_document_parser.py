@@ -11,8 +11,6 @@ class FakePage:
 
 
 class FakeDoc:
-    """Module-level so pickle can locate the class by import path."""
-
     def __init__(self, pages):
         self.pages = pages
 
@@ -73,14 +71,14 @@ def test_parse_document_recovers_from_corrupted_cache(tmp_path, monkeypatch):
     cache_path.write_bytes(b"not a valid pickle stream")
 
     monkeypatch.setattr(document_parser, "DocumentConverter", FakeConverterSuccess)
-    monkeypatch.setattr(document_parser, "_ocr_pictures", lambda doc: None)
+    monkeypatch.setattr(document_parser, "_process_pictures", lambda doc, pictures_dir: None)
 
     source = tmp_path / "file.pdf"
     source.write_bytes(b"%PDF-1.4 fake")
 
     result = document_parser.parse_document(str(source), cache_path)
     assert isinstance(result, FakeDoc)
-    # cache got overwritten with a valid pickle this time
+
     assert isinstance(pickle.loads(cache_path.read_bytes()), FakeDoc)
 
 
@@ -116,25 +114,30 @@ def test_document_metadata_counts_from_export_dict():
     }
 
 
-def test_ocr_pictures_missing_tesseract_binary_degrades_gracefully(monkeypatch):
+def test_ocr_pictures_missing_tesseract_binary_degrades_gracefully(tmp_path, monkeypatch):
     import pytesseract
+
+    class FakeImage:
+        def save(self, buf, format=None):
+            buf.write(b"fake-png-bytes")
 
     class FakePicture:
         annotations = []
+        self_ref = "#/pictures/0"
 
         def get_image(self, doc):
-            return object()
+            return FakeImage()
 
     class FakeDocWithPicture:
         def iterate_items(self):
             return iter([(FakePicture(), 0)])
 
     monkeypatch.setattr(document_parser, "PictureItem", FakePicture)
+    monkeypatch.setattr(document_parser, "load_vision_llm", lambda: None)
 
     def raise_not_found(image):
         raise pytesseract.TesseractNotFoundError()
 
     monkeypatch.setattr(pytesseract, "image_to_string", raise_not_found)
 
-    # Should not raise — missing OCR binary degrades to caption/VLM-only.
-    document_parser._ocr_pictures(FakeDocWithPicture())
+    document_parser._process_pictures(FakeDocWithPicture(), tmp_path / "pictures")

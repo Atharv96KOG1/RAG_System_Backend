@@ -1,5 +1,7 @@
 import hashlib
 import logging
+import mimetypes
+from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile
 from fastapi.responses import FileResponse
@@ -13,18 +15,17 @@ from src.api.schemas.documents import (
 from src.api.state import state
 from src.core.config import settings
 from src.core.errors import RagError
+from src.rag.document_parser import IMAGE_EXTENSIONS
 from src.rag.pipeline import build_combined_chain, ingest_document
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
+ALLOWED_EXTENSIONS = {".pdf"} | IMAGE_EXTENSIONS
+
 
 def _ingest_in_background(file_hash: str, dest_path):
-    """Runs off the request thread (scheduled via BackgroundTasks) so a large PDF's
-    parse/chunk/embed/graph-extract pass never blocks the upload HTTP response or the
-    single in-memory `state` for other requests. Never raises — failures are recorded
-    on state.documents so the frontend can show them instead of the request just hanging."""
     doc = state.documents[file_hash]
     try:
         entry = ingest_document(str(dest_path), state.embeddings)
@@ -52,8 +53,8 @@ def list_documents():
 
 @router.post("", response_model=DocumentListResponse)
 def upload_document(file: UploadFile, background_tasks: BackgroundTasks):
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are supported.")
+    if Path(file.filename).suffix.lower() not in ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Only PDF or image files (PNG/JPG/TIFF/BMP/WEBP) are supported.")
 
     file_bytes = file.file.read()
     file_hash = hashlib.md5(file_bytes).hexdigest()[:16]
@@ -79,14 +80,25 @@ def get_document_file(file_hash: str):
     doc = state.documents.get(file_hash)
     if doc is None:
         raise HTTPException(status_code=404, detail="Unknown document hash.")
-    # content_disposition_type="inline" — FileResponse defaults to "attachment", which
-    # makes the browser download the PDF instead of rendering it in the preview <iframe>.
+
+    media_type = mimetypes.guess_type(doc["filename"])[0] or "application/octet-stream"
     return FileResponse(
         doc["source_path"],
-        media_type="application/pdf",
+        media_type=media_type,
         filename=doc["filename"],
         content_disposition_type="inline",
     )
+
+
+@router.get("/{file_hash}/pictures/{filename}")
+def get_document_picture(file_hash: str, filename: str):
+    if file_hash not in state.documents:
+        raise HTTPException(status_code=404, detail="Unknown document hash.")
+
+    path = settings.cache_dir / file_hash / "pictures" / Path(filename).name
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Image not found.")
+    return FileResponse(path, media_type="image/png")
 
 
 @router.delete("/{file_hash}", response_model=DocumentListResponse)
@@ -119,9 +131,7 @@ def activate_documents(request: ActivateRequest):
 
     entries = [state.documents[h]["entry"] for h in request.hashes]
     try:
-        rag_chain, doc_metadata, combined_graph, touched_box, sources_box = build_combined_chain(
-            entries, state.device
-        )
+        rag_chain, doc_metadata, combined_graph, touched_box, sources_box = build_combined_chain(entries, state.device)
     except RagError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

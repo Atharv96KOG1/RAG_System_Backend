@@ -115,9 +115,7 @@ def test_answer_query_handles_generic_api_error(monkeypatch):
 
 
 def test_load_llm_raises_clear_error_when_api_key_missing(monkeypatch):
-    # settings is a singleton read once at process startup (src/core/config.py), so
-    # tests patch the singleton's attribute directly rather than the env var — setting
-    # the env var post-import would never reach an object that's already constructed.
+
     monkeypatch.setattr(rag_chain.settings, "openai_api_key", None)
     with pytest.raises(MissingAPIKeyError):
         rag_chain.load_llm()

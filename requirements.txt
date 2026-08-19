@@ -16,6 +16,7 @@ python-dotenv
 torch
 streamlit
 pytesseract
+opencv-python
 fastapi
 uvicorn[standard]
 python-multipart
